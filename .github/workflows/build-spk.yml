@@ -82,7 +82,7 @@ jobs:
           p = Path("src/components/FolderTree.tsx")
           s = p.read_text()
           old_modal = "            autoOpen\n          />"
-          new_modal = "            autoOpen\n            showHiddenFolder={false}\\n          />"
+          new_modal = "            autoOpen\n            showHiddenFolder={false}\n          />"
           old_input = "<FolderTree forceRoot onChange={props.onChange} />"
           new_input = """<FolderTree
                             forceRoot
