@@ -98,89 +98,38 @@ jobs:
           p.write_text(s)
           print("Patched both ModalFolderChoose and FolderChooseInput to honor global hide_files rules.")
           PY
-          # Add a Simplified Chinese locale for the initialization wizard.
-          # Upstream v4.2.9 currently ships English only; keep all other keys
-          # backed by the English dictionary until translated overrides exist.
+          # Install the complete v4.2.9 Simplified Chinese locale.
+          # Translation source: HongyiHank/OpenList_zh-TW_L10n (zh-CN),
+          # pinned to commit dae6902f9ee45a08b2d0ee436ffe3f6cd6779061.
           python3 - <<'PY'
           from pathlib import Path
+          from urllib.request import urlopen
           import json
 
-          root = Path(".")
-          lang = root / "src/lang/zh-CN"
-          lang.mkdir(parents=True, exist_ok=True)
-          (lang / "index.json").write_text(
-              json.dumps({"lang": "简体中文"}, ensure_ascii=False, indent=2) + "\n",
-              encoding="utf-8",
-          )
-          init = {
-              "setup_to": "设置",
-              "title": "初始化 OpenList",
-              "username-tips": "管理员用户名",
-              "password-tips": "设置管理员密码",
-              "confirm_password-tips": "确认密码",
-              "site_title-tips": "站点名称",
-              "setup": "初始化",
-              "success": "初始化成功，请登录",
-              "failed": "初始化失败",
-              "password_mismatch": "两次输入的密码不一致",
-              "password_too_short": "密码至少需要 4 个字符",
-              "creating_account": "正在创建管理员账户……",
-              "waiting_storage": "正在等待存储同步……",
-              "storage_ready": "存储已就绪",
-              "waiting_storage_tip": "云端 KV 存储存在同步延迟，请稍候（通常只需几秒）",
-              "waiting_timeout": "存储同步超时。请尝试登录；如果失败，请稍后重试",
-              "env_check": "环境检查",
-              "env_check_loading": "正在检查环境……",
-              "env_check_ready": "环境已就绪",
-              "env_check_not_ready": "环境尚未就绪",
-              "env_check_refresh": "重新检查",
-              "env_runtime": "运行环境",
-              "env_serverless": "无服务器环境",
-              "env_local": "本地 / 容器",
-              "env_format": "存储格式",
-              "env_driver": "数据库驱动",
-              "env_resolved": "解析结果",
-              "env_storage": "存储",
-              "env_jwt": "JWT 密钥",
-              "env_status_ok": "就绪",
-              "env_status_bad": "未就绪",
-              "env_doc_link": "文档",
-              "env_fix_title": "解决方法",
-              "env_blocked_tip": "请先解决上述问题，然后继续。",
-              "env_deploy_docs": "部署指南：",
-              "step_env": "步骤 1 · 环境检查",
-              "step_account": "步骤 2 · 管理员账户",
-              "step_done": "步骤 3 · 完成",
-              "next": "下一步",
-              "back": "返回",
-              "env_continue": "继续",
-              "env_next_tip": "环境检查通过后，即可继续创建管理员账户。",
-              "finalizing": "正在完成初始化……",
-              "finalizing_tip": "请保持此页面打开，直到初始化完成。",
-              "done_title": "初始化完成",
-              "done_subtitle": "OpenList 已准备就绪，可以开始使用。",
-              "done_username": "管理员用户名",
-              "done_site_url": "站点地址",
-              "done_go_login": "前往登录",
-              "done_go_home": "打开首页",
-              "timeout_title": "仍在同步",
-              "timeout_tip": "管理员账户已创建，但后端尚未确认存储就绪。你可以重新检查，或现在尝试登录。",
-              "error_title": "初始化失败",
-              "error_code": "错误代码",
-              "storage_issue_title": "检测到存储问题",
-              "storage_issue_hint": "请修复存储配置，然后重新检查环境再试。",
-          }
-          (lang / "init.json").write_text(
-              json.dumps(init, ensure_ascii=False, indent=2) + "\n",
-              encoding="utf-8",
-          )
-          (lang / "entry.ts").write_text(
-              'import { dict as en } from "~/lang/en/entry"\n'
-              'import init from "./init.json"\n'
-              '\n'
-              'export const dict = { ...en, init }\n',
-              encoding="utf-8",
-          )
+          base = "https://raw.githubusercontent.com/HongyiHank/OpenList_zh-TW_L10n/dae6902f9ee45a08b2d0ee436ffe3f6cd6779061/zh-CN"
+          names = [
+              "br.json", "drivers.json", "global.json", "home.json",
+              "index.json", "indexes.json", "init.json", "login.json",
+              "manage.json", "media.json", "metas.json", "plugins.json",
+              "settings_other.json", "settings.json", "shares.json",
+              "storages.json", "tasks.json", "users.json", "entry.ts",
+          ]
+          target = Path("src/lang/zh-CN")
+          target.mkdir(parents=True, exist_ok=True)
+          for name in names:
+              url = f"{base}/{name}"
+              with urlopen(url, timeout=30) as response:
+                  data = response.read()
+              if name.endswith(".json"):
+                  json.loads(data.decode("utf-8"))
+              (target / name).write_bytes(data)
+              print(f"Installed zh-CN/{name} ({len(data)} bytes)")
+          required = set(names)
+          missing = [name for name in required if not (target / name).is_file()]
+          if missing:
+              raise SystemExit(f"Missing Chinese locale files: {missing}")
+          print("Complete Simplified Chinese locale installed for OpenList v4.2.9.")
+          PY
 
           i18n = Path("src/app/i18n.ts")
           text = i18n.read_text(encoding="utf-8")
@@ -212,7 +161,7 @@ jobs:
               raise SystemExit("Could not locate language switcher initial selection")
           text = text.replace(old, "    switchLang(initialLang)", 1)
           switcher.write_text(text, encoding="utf-8")
-          print("Added zh-CN locale; initialization wizard defaults to Simplified Chinese on Chinese browsers.")
+          print("Configured Simplified Chinese locale and language switcher.")
           PY
           pnpm install --frozen-lockfile
           pnpm build
