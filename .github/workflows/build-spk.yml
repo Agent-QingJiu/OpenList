@@ -129,7 +129,6 @@ jobs:
           if missing:
               raise SystemExit(f"Missing Chinese locale files: {missing}")
           print("Complete Simplified Chinese locale installed for OpenList v4.2.9.")
-          PY
 
           i18n = Path("src/app/i18n.ts")
           text = i18n.read_text(encoding="utf-8")
