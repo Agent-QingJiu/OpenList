@@ -6,10 +6,13 @@ on:
       openlist_ref:
         description: "OpenList upstream branch, tag, or commit"
         required: true
-        default: "v4.2.9"
+        default: "latest"
         type: string
+  schedule:
+    - cron: "0 */6 * * *"
   push:
     paths:
+      - "README.md"
       - ".github/workflows/build-spk.yml"
       - "package/**"
 
@@ -21,7 +24,277 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check-upstream:
+    name: 检查 OpenList 上游版本
+    runs-on: ubuntu-latest
+    outputs:
+      openlist_ref: ${{ steps.check.outputs.openlist_ref }}
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - name: 检查官方最新正式版本
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_REF: ${{ inputs.openlist_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/OpenListTeam/OpenList.git upstream
+          git -C upstream fetch --tags --force
+          if [ "$EVENT_NAME" = "schedule" ] || [ "${REQUESTED_REF:-latest}" = "latest" ]; then
+            REF="$(git -C upstream tag --sort=-v:refname | grep -E '^v[0-9]+\\.[0-9]+\\.[0-9]+    name: Build bromolow x86_64 SPK
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout packaging project
+        uses: actions/checkout@v4
+
+      - name: Checkout official OpenList source
+        env:
+          OPENLIST_REF: ${{ needs.check-upstream.outputs.openlist_ref }}
+        run: |
+          git clone --filter=blob:none https://github.com/OpenListTeam/OpenList.git upstream
+          git -C upstream fetch --force --tags
+          git -C upstream checkout "${OPENLIST_REF}"
+          git -C upstream describe --tags --always
+
+      - name: Read upstream Go toolchain version
+        id: go
+        run: |
+          TOOLCHAIN="$(sed -n 's/^toolchain go//p' upstream/go.mod | head -n1)"
+          if [ -z "$TOOLCHAIN" ]; then
+            TOOLCHAIN="$(sed -n 's/^go //p' upstream/go.mod | head -n1)"
+          fi
+          echo "version=$TOOLCHAIN" >> "$GITHUB_OUTPUT"
+          echo "Using Go $TOOLCHAIN"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache: false
+
+      - name: Install package icon tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librsvg2-bin python3-pil
+
+      - name: Checkout OpenList frontend
+        uses: actions/checkout@v4
+        with:
+          repository: OpenListTeam/OpenList-Frontend
+          ref: ${{ needs.check-upstream.outputs.openlist_ref }}
+          path: frontend
+
+      - name: Set up Node and pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.14.0"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "11.28.11"
+
+      - name: Prepare official frontend translations
+        working-directory: frontend
+        env:
+          OPENLIST_REF: ${{ needs.check-upstream.outputs.openlist_ref }}
+        run: |
+          # 使用与 OpenList 上游版本对应的官方前端语言包。
+          # This preserves every upstream locale and avoids replacing the
+          # original language system with a partial third-party translation.
+          curl -fsSL \
+            https://github.com/OpenListTeam/OpenList-Frontend/releases/download/$OPENLIST_REF/i18n.tar.gz \
+            -o i18n.tar.gz
+          tar -xzf i18n.tar.gz -C src/lang
+          test -s src/lang/zh-CN/index.json
+          node ./scripts/i18n.mjs
+          echo "已安装对应版本的官方语言资源，包括简体中文。"
+          pnpm install --frozen-lockfile
+          pnpm build
+          test -s dist/index.html
+
+      - name: Build OpenList backend with patched frontend
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          rm -rf public/dist
+          mkdir -p public/dist
+          cp -a ../frontend/dist/. public/dist/
+          test -s public/dist/index.html
+          echo "Patched frontend bundle embedded from OpenList-Frontend:"
+          find public/dist -maxdepth 2 -type f | sed -n '1,20p'
+
+          BUILT_AT="$(date +'%F %T %z')"
+          GIT_AUTHOR="The OpenList Projects Contributors <noreply@oplist.org>"
+          GIT_COMMIT="$(git log --pretty=format:%h -1)"
+          VERSION="$(git describe --abbrev=0 --tags 2>/dev/null || echo v0.0.0)"
+          WEB_VERSION="custom-official-i18n"
+          LDFLAGS="-w -s -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.BuiltAt=${BUILT_AT}' -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitAuthor=${GIT_AUTHOR}' -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitCommit=${GIT_COMMIT}' -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.Version=${VERSION}' -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.WebVersion=${WEB_VERSION}'"
+
+          # DSM 6.2.3 has an older glibc; CGO-disabled Go build stays portable.
+          CGO_ENABLED=0 go build -o bin/openlist -ldflags="${LDFLAGS}" -tags=jsoniter .
+          test -s bin/openlist
+          file bin/openlist
+          readelf -h bin/openlist | grep -E 'Class:|Machine:'
+          if readelf -l bin/openlist | grep -q 'Requesting program interpreter'; then
+            echo "ERROR: OpenList binary is dynamically linked."
+            readelf -l bin/openlist | grep 'Requesting program interpreter' || true
+            exit 1
+          fi
+          if readelf -d bin/openlist 2>/dev/null | grep -q '(NEEDED)'; then
+            echo "ERROR: OpenList binary still has dynamic library dependencies."
+            readelf -d bin/openlist | grep '(NEEDED)' || true
+            exit 1
+          fi
+          echo "Verified: patched frontend embedded and backend has no dynamic dependencies."
+
+      - name: Assemble Synology SPK
+        id: package
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          VERSION="$(git -C upstream describe --tags --abbrev=0 2>/dev/null || git -C upstream rev-parse --short HEAD)"
+          VERSION="${VERSION#v}"
+          SAFE_VERSION="$(printf '%s' "$VERSION" | tr -c 'A-Za-z0-9._-' '-')"
+          # Synology requires a monotonically increasing package build number.
+          # Keep the upstream app version visible, and append this workflow's
+          # increasing run number so DSM accepts in-place upgrades.
+          BUILD_NUMBER="$(printf '%04d' "$RUN_NUMBER")"
+          SAFE_VERSION="${SAFE_VERSION}-${BUILD_NUMBER}"
+          STAGE="$RUNNER_TEMP/spk"
+          PAYLOAD="$STAGE/payload"
+          mkdir -p "$PAYLOAD/bin" "$STAGE/scripts"
+
+          install -m 0755 upstream/bin/openlist "$PAYLOAD/bin/openlist"
+          install -m 0644 upstream/LICENSE "$PAYLOAD/LICENSE"
+          printf '%s\n' "$VERSION" > "$PAYLOAD/VERSION"
+
+          sed "s/@VERSION@/$SAFE_VERSION/g" package/INFO.template > "$STAGE/INFO"
+
+          # DSM 6.x uses a 72x72 package icon; the 256px variant is also
+          # included for newer DSM versions. Keep both at the SPK root.
+          # Use the official full-color PNG app icon, not logo.svg's
+          # monochrome/technical mark. The repository provides pre-rendered
+          # square PNG assets generated from its original Illustrator artwork.
+          curl -fsSL https://raw.githubusercontent.com/OpenListTeam/Logo/main/logo/256x256.png -o "$STAGE/openlist-color.png"
+          python3 - "$STAGE/openlist-color.png" "$STAGE/PACKAGE_ICON.PNG" "$STAGE/PACKAGE_ICON_256.PNG" "$STAGE/INFO" <<'PY'
+          import base64
+          import sys
+          from io import BytesIO
+          from pathlib import Path
+          from PIL import Image
+          source = Image.open(sys.argv[1]).convert("RGBA")
+          if source.getbbox() is None:
+              raise SystemExit("ERROR: official OpenList color icon is empty")
+
+          # DSM's small package-list icon handles transparent RGBA correctly.
+          icon72 = source.resize((72, 72), Image.Resampling.LANCZOS)
+          icon72.save(sys.argv[2], "PNG", optimize=True)
+
+          # The detail-page renderer on this DSM 6 target displays transparent
+          # 256px icons as a black mask. Flatten only this larger icon onto
+          # white, preserving the official blue/mint RGB artwork.
+          icon256 = source.resize((256, 256), Image.Resampling.LANCZOS)
+          white = Image.new("RGBA", icon256.size, (255, 255, 255, 255))
+          white.alpha_composite(icon256)
+          opaque256 = white.convert("RGB")
+          opaque256.save(sys.argv[3], "PNG", optimize=True)
+
+          check72 = Image.open(sys.argv[2])
+          check256 = Image.open(sys.argv[3])
+          if check72.size != (72, 72) or check72.mode != "RGBA":
+              raise SystemExit("ERROR: 72px icon validation failed")
+          if check256.size != (256, 256) or check256.mode != "RGB":
+              raise SystemExit("ERROR: 256px icon must be opaque RGB")
+          colors = opaque256.getcolors(256 * 256) or []
+          if len(colors) < 3:
+              raise SystemExit("ERROR: 256px icon lost its full-color artwork")
+
+          # Also refresh the authoritative DSM 256px INFO field so an upgrade
+          # cannot keep an older cached package_icon_256 value.
+          buf = BytesIO()
+          opaque256.save(buf, format="PNG", optimize=True)
+          encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+          with open(sys.argv[4], "a", encoding="utf-8") as info:
+              info.write(f'package_icon_256="{encoded}"\n')
+
+          print(f"Verified list icon: {sys.argv[2]} ({check72.mode}, {check72.size})")
+          print(f"Verified detail icon: {sys.argv[3]} ({check256.mode}, {check256.size}, {len(colors)} colors, opaque)")
+          print(f"Verified INFO package_icon_256: {len(encoded)} base64 chars")
+          PY
+          rm -f "$STAGE/openlist-color.png"
+          file "$STAGE/PACKAGE_ICON.PNG" "$STAGE/PACKAGE_ICON_256.PNG"
+          test -s "$STAGE/PACKAGE_ICON.PNG"
+          test -s "$STAGE/PACKAGE_ICON_256.PNG"
+
+          install -m 0755 package/scripts/start-stop-status "$STAGE/scripts/start-stop-status"
+          install -m 0755 package/scripts/postinst "$STAGE/scripts/postinst"
+          install -m 0755 package/scripts/preuninst "$STAGE/scripts/preuninst"
+
+          tar -czf "$STAGE/package.tgz" -C "$PAYLOAD" .
+          tar -cf "OpenList-${SAFE_VERSION}-DSM6.2.3-bromolow.spk" -C "$STAGE" INFO package.tgz scripts PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG
+
+          tar -tf "OpenList-${SAFE_VERSION}-DSM6.2.3-bromolow.spk"
+          tar -xOf "OpenList-${SAFE_VERSION}-DSM6.2.3-bromolow.spk" INFO | awk -F= '
+            $1 == "package_icon" { print "SPK INFO: package_icon present (" length($2) " chars)" }
+            $1 == "package_icon_256" { print "SPK INFO: package_icon_256 present (" length($2) " chars)" }
+          '
+          echo "version=$SAFE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "spk=OpenList-${SAFE_VERSION}-DSM6.2.3-bromolow.spk" >> "$GITHUB_OUTPUT"
+
+      - name: Upload SPK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenList-${{ steps.package.outputs.version }}-DSM6.2.3-bromolow
+          path: ${{ steps.package.outputs.spk }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish SPK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: synology-${{ steps.package.outputs.version }}
+          name: OpenList ${{ steps.package.outputs.version }} (Synology DSM 6.2.3)
+          body: |
+            ## 群晖 SPK 安装包
+
+            - **OpenList 版本：** ${{ needs.check-upstream.outputs.openlist_ref }}
+            - **套件构建版本：** ${{ steps.package.outputs.version }}
+            - **适用架构：** bromolow x86_64
+            - **适用系统：** 群晖 DSM 6.2.3+
+
+            ### 安装方法
+            下载下方的 SPK 文件，在群晖「套件中心」中选择「手动安装」并上传即可。
+
+            ### 说明
+            本安装包由 GitHub Actions 自动构建，使用 OpenList 官方源码及本项目的群晖套件配置。
+          files: ${{ steps.package.outputs.spk }}
+          fail_on_unmatched_files: true
+          make_latest: false
+ | head -n1)"
+          else
+            REF="$REQUESTED_REF"
+          fi
+          if [ -z "$REF" ]; then echo "未找到有效的 OpenList 版本"; exit 1; fi
+          echo "openlist_ref=$REF" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            VERSION="${REF#v}"
+            RELEASES="$(gh api repos/${{ github.repository }}/releases --paginate --jq '.[].tag_name')"
+            if printf '%s\\n' "$RELEASES" | grep -Eq "^synology-${VERSION}-[0-9]+$"; then
+              echo "版本 $REF 已经构建并发布，跳过。"
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "should_build=true" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true'
     name: Build bromolow x86_64 SPK
     runs-on: ubuntu-24.04
     steps:
