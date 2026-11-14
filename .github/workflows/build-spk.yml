@@ -58,6 +58,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          mkdir -p bin
           bash build.sh release docker
           test -s bin/openlist
           file bin/openlist
