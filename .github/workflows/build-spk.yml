@@ -98,70 +98,16 @@ jobs:
           p.write_text(s)
           print("Patched both ModalFolderChoose and FolderChooseInput to honor global hide_files rules.")
           PY
-          # Install the complete v4.2.9 Simplified Chinese locale.
-          # Translation source: HongyiHank/OpenList_zh-TW_L10n (zh-CN),
-          # pinned to commit dae6902f9ee45a08b2d0ee436ffe3f6cd6779061.
-          python3 - <<'PY'
-          from pathlib import Path
-          from urllib.request import urlopen
-          import json
-
-          base = "https://raw.githubusercontent.com/HongyiHank/OpenList_zh-TW_L10n/dae6902f9ee45a08b2d0ee436ffe3f6cd6779061/zh-CN"
-          names = [
-              "br.json", "drivers.json", "global.json", "home.json",
-              "index.json", "indexes.json", "init.json", "login.json",
-              "manage.json", "media.json", "metas.json", "plugins.json",
-              "settings_other.json", "settings.json", "shares.json",
-              "storages.json", "tasks.json", "users.json", "entry.ts",
-          ]
-          target = Path("src/lang/zh-CN")
-          target.mkdir(parents=True, exist_ok=True)
-          for name in names:
-              url = f"{base}/{name}"
-              with urlopen(url, timeout=30) as response:
-                  data = response.read()
-              if name.endswith(".json"):
-                  json.loads(data.decode("utf-8"))
-              (target / name).write_bytes(data)
-              print(f"Installed zh-CN/{name} ({len(data)} bytes)")
-          required = set(names)
-          missing = [name for name in required if not (target / name).is_file()]
-          if missing:
-              raise SystemExit(f"Missing Chinese locale files: {missing}")
-          print("Complete Simplified Chinese locale installed for OpenList v4.2.9.")
-
-          i18n = Path("src/app/i18n.ts")
-          text = i18n.read_text(encoding="utf-8")
-          old = 'export let initialLang = localStorage.getItem("lang") ?? defaultLang'
-          new = '''const savedLang = localStorage.getItem("lang")
-          const browserPrefersChinese =
-            userLang.startsWith("zh") && languages.some((lang) => lang.code === "zh-CN")
-          export let initialLang =
-            savedLang === "en" && browserPrefersChinese
-              ? "zh-CN"
-              : savedLang ?? defaultLang'''
-          if old not in text:
-              raise SystemExit("Could not locate initial language selection")
-          i18n.write_text(text.replace(old, new, 1), encoding="utf-8")
-
-          switcher = Path("src/components/SwitchLanguage.tsx")
-          text = switcher.read_text(encoding="utf-8")
-          text = text.replace(
-              'import { Lang, languages, setCurrentLang } from "~/app/i18n"',
-              'import { Lang, initialLang, languages, setCurrentLang } from "~/app/i18n"',
-              1,
-          )
-          old = '''    switchLang(
-                languages.find((l) => l.code === navigator.language)
-                  ? navigator.language
-                  : "en",
-              )'''
-          if old not in text:
-              raise SystemExit("Could not locate language switcher initial selection")
-          text = text.replace(old, "    switchLang(initialLang)", 1)
-          switcher.write_text(text, encoding="utf-8")
-          print("Configured Simplified Chinese locale and language switcher.")
-          PY
+          # Use the official OpenList Frontend v4.2.9 translation bundle.
+          # This preserves every upstream locale and avoids replacing the
+          # original language system with a partial third-party translation.
+          curl -fsSL \
+            https://github.com/OpenListTeam/OpenList-Frontend/releases/download/v4.2.9/i18n.tar.gz \
+            -o i18n.tar.gz
+          tar -xzf i18n.tar.gz -C src/lang
+          test -s src/lang/zh-CN/index.json
+          node ./scripts/i18n.mjs
+          echo "Installed official v4.2.9 language resources, including zh-CN."
           pnpm install --frozen-lockfile
           pnpm build
           test -s dist/index.html
