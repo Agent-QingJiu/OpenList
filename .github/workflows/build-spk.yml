@@ -81,19 +81,13 @@ jobs:
           from pathlib import Path
           p = Path("src/components/FolderTree.tsx")
           s = p.read_text()
-          old_modal = """          <FolderTree
-                      onChange={setValue}
-                      handle={(h) => setHandler(h)}
-                      autoOpen
+          old_modal = """            autoOpen
                     />"""
-          new_modal = """          <FolderTree
-                      onChange={setValue}
-                      handle={(h) => setHandler(h)}
-                      autoOpen
+          new_modal = """            autoOpen
                       showHiddenFolder={false}
                     />"""
-          old_input = """            <FolderTree forceRoot onChange={props.onChange} />"""
-          new_input = """            <FolderTree
+          old_input = "<FolderTree forceRoot onChange={props.onChange} />"
+          new_input = """<FolderTree
                       forceRoot
                       onChange={props.onChange}
                       showHiddenFolder={false}
@@ -112,8 +106,6 @@ jobs:
 
       - name: Build OpenList backend with patched frontend
         working-directory: upstream
-        env:
-          FRONTEND_VERSION: ${{ steps.frontend.outputs.version }}
         run: |
           set -euo pipefail
           mkdir -p bin
