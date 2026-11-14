@@ -1,0 +1,91 @@
+#!/bin/sh
+
+PACKAGE="OpenList"
+PKGDEST="${SYNOPKG_PKGDEST:-/var/packages/${PACKAGE}/target}"
+PKGVAR="${SYNOPKG_PKGVAR:-/var/packages/${PACKAGE}/var}"
+BIN="$PKGDEST/bin/openlist"
+PIDFILE="$PKGVAR/openlist.pid"
+LOGDIR="$PKGVAR/log"
+LOGFILE="$LOGDIR/console.log"
+
+is_running() {
+    [ -f "$PIDFILE" ] || return 1
+    PID="$(cat "$PIDFILE" 2>/dev/null)"
+    case "$PID" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    kill -0 "$PID" 2>/dev/null
+}
+
+start_service() {
+    mkdir -p "$PKGVAR" "$LOGDIR"
+    if is_running; then
+        echo "OpenList is already running (PID $(cat "$PIDFILE"))."
+        return 0
+    fi
+    rm -f "$PIDFILE"
+    [ -x "$BIN" ] || {
+        echo "OpenList executable not found: $BIN" >&2
+        return 1
+    }
+
+    cd "$PKGVAR" || return 1
+    nohup "$BIN" --data "$PKGVAR" server >> "$LOGFILE" 2>&1 </dev/null &
+    PID=$!
+    echo "$PID" > "$PIDFILE"
+    sleep 2
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "OpenList started (PID $PID)."
+        return 0
+    fi
+    rm -f "$PIDFILE"
+    echo "OpenList failed to start. Check $LOGFILE." >&2
+    return 1
+}
+
+stop_service() {
+    if ! is_running; then
+        rm -f "$PIDFILE"
+        echo "OpenList is not running."
+        return 0
+    fi
+
+    PID="$(cat "$PIDFILE")"
+    kill -TERM "$PID" 2>/dev/null || true
+    COUNT=0
+    while [ "$COUNT" -lt 20 ]; do
+        kill -0 "$PID" 2>/dev/null || break
+        sleep 1
+        COUNT=$((COUNT + 1))
+    done
+
+    if kill -0 "$PID" 2>/dev/null; then
+        kill -KILL "$PID" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE"
+    echo "OpenList stopped."
+}
+
+case "$1" in
+    start)
+        start_service
+        ;;
+    stop)
+        stop_service
+        ;;
+    status)
+        if is_running; then
+            echo "OpenList is running (PID $(cat "$PIDFILE"))."
+            exit 0
+        fi
+        echo "OpenList is stopped."
+        exit 1
+        ;;
+    log)
+        [ -f "$LOGFILE" ] && tail -n 100 "$LOGFILE"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|status|log}"
+        exit 1
+        ;;
+esac
