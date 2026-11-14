@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check-upstream:
+  check_upstream:
     name: 检查 OpenList 上游版本
     runs-on: ubuntu-latest
     outputs:
@@ -63,8 +63,8 @@ jobs:
           echo "should_build=true" >> "$GITHUB_OUTPUT"
 
   build:
-    needs: check-upstream
-    if: needs.check-upstream.outputs.should_build == 'true'
+    needs: check_upstream
+    if: needs.check_upstream.outputs.should_build == 'true'
     name: Build bromolow x86_64 SPK
     runs-on: ubuntu-24.04
     steps:
@@ -73,7 +73,7 @@ jobs:
 
       - name: Checkout official OpenList source
         env:
-          OPENLIST_REF: ${{ needs.check-upstream.outputs.openlist_ref }}
+          OPENLIST_REF: ${{ needs.check_upstream.outputs.openlist_ref }}
         run: |
           git clone --filter=blob:none https://github.com/OpenListTeam/OpenList.git upstream
           git -C upstream fetch --force --tags
@@ -105,7 +105,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: OpenListTeam/OpenList-Frontend
-          ref: ${{ needs.check-upstream.outputs.openlist_ref }}
+          ref: ${{ needs.check_upstream.outputs.openlist_ref }}
           path: frontend
 
       - name: Set up Node and pnpm
@@ -121,7 +121,7 @@ jobs:
       - name: Prepare official frontend translations
         working-directory: frontend
         env:
-          OPENLIST_REF: ${{ needs.check-upstream.outputs.openlist_ref }}
+          OPENLIST_REF: ${{ needs.check_upstream.outputs.openlist_ref }}
         run: |
           # 使用与 OpenList 上游版本对应的官方前端语言包。
           # This preserves every upstream locale and avoids replacing the
@@ -281,11 +281,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: synology-${{ steps.package.outputs.version }}
-          name: OpenList ${{ steps.package.outputs.version }} (Synology DSM 6.2.3)
+          name: OpenList ${{ steps.package.outputs.version }}（群晖 DSM 6.2.3）
           body: |
             ## 群晖 SPK 安装包
 
-            - **OpenList 版本：** ${{ needs.check-upstream.outputs.openlist_ref }}
+            - **OpenList 版本：** ${{ needs.check_upstream.outputs.openlist_ref }}
             - **套件构建版本：** ${{ steps.package.outputs.version }}
             - **适用架构：** bromolow x86_64
             - **适用系统：** 群晖 DSM 6.2.3+
@@ -316,8 +316,8 @@ jobs:
           echo "should_build=true" >> "$GITHUB_OUTPUT"
 
   build:
-    needs: check-upstream
-    if: needs.check-upstream.outputs.should_build == 'true'
+    needs: check_upstream
+    if: needs.check_upstream.outputs.should_build == 'true'
     name: Build bromolow x86_64 SPK
     runs-on: ubuntu-24.04
     steps:
@@ -536,7 +536,7 @@ jobs:
           body: |
             ## 群晖 SPK 安装包
 
-            - **OpenList 上游版本：** ${{ needs.check-upstream.outputs.openlist_ref }}
+            - **OpenList 上游版本：** ${{ needs.check_upstream.outputs.openlist_ref }}
             - **套件构建版本：** ${{ steps.package.outputs.version }}
             - **适用架构：** bromolow x86_64
             - **适用系统：** 群晖 DSM 6.2.3+
