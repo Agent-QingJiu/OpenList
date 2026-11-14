@@ -42,7 +42,30 @@ jobs:
           git clone --filter=blob:none --no-checkout https://github.com/OpenListTeam/OpenList.git upstream
           git -C upstream fetch --tags --force
           if [ "$EVENT_NAME" = "schedule" ] || [ "${REQUESTED_REF:-latest}" = "latest" ]; then
-            REF="$(git -C upstream tag --sort=-v:refname | grep -E '^v[0-9]+\\.[0-9]+\\.[0-9]+    name: Build bromolow x86_64 SPK
+            REF="$(git -C upstream tag --sort=-v:refname | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | head -n1)"
+          else
+            REF="$REQUESTED_REF"
+          fi
+          if [ -z "$REF" ]; then
+            echo "未找到有效的 OpenList 正式版本标签"
+            exit 1
+          fi
+          echo "openlist_ref=$REF" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            VERSION="${REF#v}"
+            RELEASES="$(gh api repos/${{ github.repository }}/releases --paginate --jq '.[].tag_name')"
+            if printf '%s\\n' "$RELEASES" | grep -Eq "^synology-${VERSION}-[0-9]+$"; then
+              echo "版本 $REF 已经发布，跳过重复构建。"
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "should_build=true" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true'
+    name: Build bromolow x86_64 SPK
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout packaging project
@@ -511,13 +534,18 @@ jobs:
           tag_name: synology-${{ steps.package.outputs.version }}
           name: OpenList ${{ steps.package.outputs.version }} (Synology DSM 6.2.3)
           body: |
-            OpenList Synology SPK package.
+            ## 群晖 SPK 安装包
 
-            - OpenList version: ${{ steps.package.outputs.version }}
-            - Platform: bromolow x86_64
-            - DSM compatibility: DSM 6.2.3+
-            
-            Download the `.spk` asset below and install it in Synology Package Center.
+            - **OpenList 上游版本：** ${{ needs.check-upstream.outputs.openlist_ref }}
+            - **套件构建版本：** ${{ steps.package.outputs.version }}
+            - **适用架构：** bromolow x86_64
+            - **适用系统：** 群晖 DSM 6.2.3+
+
+            ### 安装方法
+            下载下方的 SPK 文件，在群晖「套件中心」中选择「手动安装」并上传即可。
+
+            ### 说明
+            本安装包由 GitHub Actions 自动构建，使用 OpenList 官方源码及本项目的群晖套件配置。
           files: ${{ steps.package.outputs.spk }}
           fail_on_unmatched_files: true
           make_latest: false
