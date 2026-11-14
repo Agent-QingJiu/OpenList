@@ -204,10 +204,10 @@ jobs:
               1,
           )
           old = '''    switchLang(
-      languages.find((l) => l.code === navigator.language)
-        ? navigator.language
-        : "en",
-    )'''
+                    languages.find((l) => l.code === navigator.language)
+                      ? navigator.language
+                      : "en",
+                  )'''
           if old not in text:
               raise SystemExit("Could not locate language switcher initial selection")
           text = text.replace(old, "    switchLang(initialLang)", 1)
