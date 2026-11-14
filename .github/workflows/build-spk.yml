@@ -58,20 +58,86 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y librsvg2-bin python3-pil
 
-      - name: Build official OpenList backend and frontend
+      - name: Checkout OpenList frontend
+        uses: actions/checkout@v4
+        with:
+          repository: OpenListTeam/OpenList-Frontend
+          path: frontend
+
+      - name: Set up Node and pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.14.0"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "11.28.11"
+
+      - name: Apply hidden-file filtering to folder pickers
+        working-directory: frontend
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("src/components/FolderTree.tsx")
+          s = p.read_text()
+          old_modal = """          <FolderTree
+                      onChange={setValue}
+                      handle={(h) => setHandler(h)}
+                      autoOpen
+                    />"""
+          new_modal = """          <FolderTree
+                      onChange={setValue}
+                      handle={(h) => setHandler(h)}
+                      autoOpen
+                      showHiddenFolder={false}
+                    />"""
+          old_input = """            <FolderTree forceRoot onChange={props.onChange} />"""
+          new_input = """            <FolderTree
+                      forceRoot
+                      onChange={props.onChange}
+                      showHiddenFolder={false}
+                    />"""
+          if s.count(old_modal) != 1 or s.count(old_input) != 1:
+              raise SystemExit("Expected folder-picker call sites not found exactly once; refusing to build.")
+          s = s.replace(old_modal, new_modal, 1).replace(old_input, new_input, 1)
+          if s.count("showHiddenFolder={false}") < 2:
+              raise SystemExit("Hidden-folder filtering patch validation failed.")
+          p.write_text(s)
+          print("Patched both ModalFolderChoose and FolderChooseInput to honor global hide_files rules.")
+          PY
+          pnpm install --frozen-lockfile
+          pnpm build
+          test -s dist/index.html
+
+      - name: Build OpenList backend with patched frontend
         working-directory: upstream
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          FRONTEND_VERSION: ${{ steps.frontend.outputs.version }}
         run: |
+          set -euo pipefail
           mkdir -p bin
-          # DSM 6.2.3 ships an older glibc. Build with CGO disabled so the
-          # Go executable does not depend on the runner's newer glibc.
-          CGO_ENABLED=0 bash build.sh release docker
+          rm -rf public/dist
+          mkdir -p public/dist
+          cp -a ../frontend/dist/. public/dist/
+          test -s public/dist/index.html
+          echo "Patched frontend bundle embedded from OpenList-Frontend:"
+          find public/dist -maxdepth 2 -type f | head -20
+
+          BUILT_AT="$(date +'%F %T %z')"
+          GIT_AUTHOR="The OpenList Projects Contributors <noreply@oplist.org>"
+          GIT_COMMIT="$(git log --pretty=format:%h -1)"
+          VERSION="$(git describe --abbrev=0 --tags 2>/dev/null || echo v0.0.0)"
+          WEB_VERSION="custom-folder-hide-filter"
+          LDFLAGS="-w -s -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.BuiltAt=${BUILT_AT}' -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitAuthor=${GIT_AUTHOR}' -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitCommit=${GIT_COMMIT}' -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.Version=${VERSION}' -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.WebVersion=${WEB_VERSION}'"
+
+          # DSM 6.2.3 has an older glibc; CGO-disabled Go build stays portable.
+          CGO_ENABLED=0 go build -o bin/openlist -ldflags="${LDFLAGS}" -tags=jsoniter .
           test -s bin/openlist
           file bin/openlist
           readelf -h bin/openlist | grep -E 'Class:|Machine:'
           if readelf -l bin/openlist | grep -q 'Requesting program interpreter'; then
-            echo "ERROR: OpenList binary is dynamically linked; DSM 6.2.3 needs a compatible static build."
+            echo "ERROR: OpenList binary is dynamically linked."
             readelf -l bin/openlist | grep 'Requesting program interpreter' || true
             exit 1
           fi
@@ -80,7 +146,7 @@ jobs:
             readelf -d bin/openlist | grep '(NEEDED)' || true
             exit 1
           fi
-          echo "Verified: no dynamic ELF interpreter or shared-library dependencies."
+          echo "Verified: patched frontend embedded and backend has no dynamic dependencies."
 
       - name: Assemble Synology SPK
         id: package
