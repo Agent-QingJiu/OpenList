@@ -124,21 +124,13 @@ jobs:
           rm -f "$STAGE/openlist-color.png"
           file "$STAGE/PACKAGE_ICON.PNG" "$STAGE/PACKAGE_ICON_256.PNG"
 
-          # Explicitly embed the icon data in INFO as well. DSM 6 Package
-          # Center can retain the previous/default icon metadata on upgrades
-          # even when the root-level PNG files are present in the SPK.
-          ICON_72="$(base64 -w0 "$STAGE/PACKAGE_ICON.PNG")"
-          ICON_256="$(base64 -w0 "$STAGE/PACKAGE_ICON_256.PNG")"
-          printf 'package_icon="%s"\n' "$ICON_72" >> "$STAGE/INFO"
-          printf 'package_icon_256="%s"\n' "$ICON_256" >> "$STAGE/INFO"
-
-          # Validate the exact metadata that DSM will read without printing
-          # the base64 image payload into the Actions log.
-          awk -F= '
-            $1 == "package_icon" { if (length($2) < 100) exit 1; found72=1 }
-            $1 == "package_icon_256" { if (length($2) < 100) exit 1; found256=1 }
-            END { if (!found72 || !found256) exit 1; print "Verified: INFO contains both embedded package icons." }
-          ' "$STAGE/INFO"
+          # Synology's SPK format reads PACKAGE_ICON.PNG and
+          # PACKAGE_ICON_256.PNG directly. Do not duplicate the large PNG
+          # payloads into INFO: the 256px base64 line can exceed DSM 6's
+          # practical INFO parser limits and leave the detail icon stale.
+          test -s "$STAGE/PACKAGE_ICON.PNG"
+          test -s "$STAGE/PACKAGE_ICON_256.PNG"
+          echo "Verified: both package icon files are present at SPK root."
 
           install -m 0755 package/scripts/start-stop-status "$STAGE/scripts/start-stop-status"
           install -m 0755 package/scripts/postinst "$STAGE/scripts/postinst"
