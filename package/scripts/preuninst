@@ -1,0 +1,6 @@
+#!/bin/sh
+SCRIPT="${SYNOPKG_PKGDEST:-/var/packages/OpenList/target}/../scripts/start-stop-status"
+if [ -x "$SCRIPT" ]; then
+    "$SCRIPT" stop || true
+fi
+exit 0
