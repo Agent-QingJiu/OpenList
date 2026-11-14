@@ -109,7 +109,7 @@ jobs:
           lang = root / "src/lang/zh-CN"
           lang.mkdir(parents=True, exist_ok=True)
           (lang / "index.json").write_text(
-              json.dumps({"lang": "简体中文"}, ensure_ascii=False, indent=2) + "\\n",
+              json.dumps({"lang": "简体中文"}, ensure_ascii=False, indent=2) + "\n",
               encoding="utf-8",
           )
           init = {
@@ -171,14 +171,14 @@ jobs:
               "storage_issue_hint": "请修复存储配置，然后重新检查环境再试。",
           }
           (lang / "init.json").write_text(
-              json.dumps(init, ensure_ascii=False, indent=2) + "\\n",
+              json.dumps(init, ensure_ascii=False, indent=2) + "\n",
               encoding="utf-8",
           )
           (lang / "entry.ts").write_text(
-              'import { dict as en } from "~/lang/en/entry"\\n'
-              'import init from "./init.json"\\n'
-              '\\n'
-              'export const dict = { ...en, init }\\n',
+              'import { dict as en } from "~/lang/en/entry"\n'
+              'import init from "./init.json"\n'
+              '\n'
+              'export const dict = { ...en, init }\n',
               encoding="utf-8",
           )
 
