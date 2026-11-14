@@ -104,36 +104,24 @@ jobs:
 
           # DSM 6.x uses a 72x72 package icon; the 256px variant is also
           # included for newer DSM versions. Keep both at the SPK root.
-          curl -fsSL https://raw.githubusercontent.com/OpenListTeam/Logo/main/logo.svg -o "$STAGE/PACKAGE_ICON.svg"
-          # The upstream SVG uses CSS custom properties. Some SVG renderers
-          # do not resolve them and silently produce a fully transparent PNG.
-          # Replace the CSS classes with explicit SVG fill attributes first.
-          python3 - "$STAGE/PACKAGE_ICON.svg" <<'PY'
-          import re
-          import sys
-          from pathlib import Path
-          path = Path(sys.argv[1])
-          svg = path.read_text(encoding="utf-8")
-          svg = re.sub(r"<defs>.*?</defs>", "", svg, flags=re.S)
-          svg = svg.replace('class="cls-1"', 'fill="#38bdf8"')
-          svg = svg.replace('class="cls-2"', 'fill="#99f6e4"')
-          if 'fill="#38bdf8"' not in svg or 'fill="#99f6e4"' not in svg:
-              raise SystemExit("Could not normalize upstream OpenList SVG colors")
-          path.write_text(svg, encoding="utf-8")
-          PY
-          rsvg-convert --width 72 --height 72 "$STAGE/PACKAGE_ICON.svg" --output "$STAGE/PACKAGE_ICON.PNG"
-          rsvg-convert --width 256 --height 256 "$STAGE/PACKAGE_ICON.svg" --output "$STAGE/PACKAGE_ICON_256.PNG"
-          rm -f "$STAGE/PACKAGE_ICON.svg"
-          # Fail the build if either rendered icon is transparent/blank.
-          python3 - "$STAGE/PACKAGE_ICON.PNG" "$STAGE/PACKAGE_ICON_256.PNG" <<'PY'
+          # Use the official full-color PNG app icon, not logo.svg's
+          # monochrome/technical mark. The repository provides pre-rendered
+          # square PNG assets generated from its original Illustrator artwork.
+          curl -fsSL https://raw.githubusercontent.com/OpenListTeam/Logo/main/logo/256x256.png -o "$STAGE/openlist-color.png"
+          python3 - "$STAGE/openlist-color.png" "$STAGE/PACKAGE_ICON.PNG" "$STAGE/PACKAGE_ICON_256.PNG" <<'PY'
           import sys
           from PIL import Image
-          for name in sys.argv[1:]:
-              image = Image.open(name).convert("RGBA")
-              if image.getbbox() is None:
-                  raise SystemExit(f"ERROR: generated icon is fully transparent: {name}")
-              print(f"Verified visible icon: {name}, {image.size}, bbox={image.getbbox()}")
+          source = Image.open(sys.argv[1]).convert("RGBA")
+          if source.getbbox() is None:
+              raise SystemExit("ERROR: official OpenList color icon is empty")
+          for size, output in ((72, sys.argv[2]), (256, sys.argv[3])):
+              icon = source.resize((size, size), Image.Resampling.LANCZOS)
+              if icon.getbbox() is None:
+                  raise SystemExit(f"ERROR: generated color icon is empty: {output}")
+              icon.save(output, "PNG", optimize=True)
+              print(f"Verified full-color icon: {output}, {icon.size}, bbox={icon.getbbox()}")
           PY
+          rm -f "$STAGE/openlist-color.png"
           file "$STAGE/PACKAGE_ICON.PNG" "$STAGE/PACKAGE_ICON_256.PNG"
 
           # Explicitly embed the icon data in INFO as well. DSM 6 Package
