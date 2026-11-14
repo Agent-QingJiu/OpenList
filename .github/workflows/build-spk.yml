@@ -98,7 +98,7 @@ jobs:
 
           install -m 0755 upstream/bin/openlist "$PAYLOAD/bin/openlist"
           install -m 0644 upstream/LICENSE "$PAYLOAD/LICENSE"
-          printf '%s\\n' "$VERSION" > "$PAYLOAD/VERSION"
+          printf '%s\n' "$VERSION" > "$PAYLOAD/VERSION"
 
           sed "s/@VERSION@/$SAFE_VERSION/g" package/INFO.template > "$STAGE/INFO"
 
@@ -115,8 +115,8 @@ jobs:
           # even when the root-level PNG files are present in the SPK.
           ICON_72="$(base64 -w0 "$STAGE/PACKAGE_ICON.PNG")"
           ICON_256="$(base64 -w0 "$STAGE/PACKAGE_ICON_256.PNG")"
-          printf 'package_icon="%s"\\n' "$ICON_72" >> "$STAGE/INFO"
-          printf 'package_icon_256="%s"\\n' "$ICON_256" >> "$STAGE/INFO"
+          printf 'package_icon="%s"\n' "$ICON_72" >> "$STAGE/INFO"
+          printf 'package_icon_256="%s"\n' "$ICON_256" >> "$STAGE/INFO"
 
           # Validate the exact metadata that DSM will read without printing
           # the base64 image payload into the Actions log.
