@@ -81,14 +81,14 @@ jobs:
           from pathlib import Path
           p = Path("src/components/FolderTree.tsx")
           s = p.read_text()
-          old_modal = "            autoOpen\\n          />"
-          new_modal = "            autoOpen\\n            showHiddenFolder={false}\\n          />"
+          old_modal = "            autoOpen\n          />"
+          new_modal = "            autoOpen\n            showHiddenFolder={false}\\n          />"
           old_input = "<FolderTree forceRoot onChange={props.onChange} />"
           new_input = """<FolderTree
-              forceRoot
-              onChange={props.onChange}
-              showHiddenFolder={false}
-            />"""
+                            forceRoot
+                            onChange={props.onChange}
+                            showHiddenFolder={false}
+                          />"""
           if s.count(old_modal) != 1 or s.count(old_input) != 1:
               raise SystemExit("Expected folder-picker call sites not found exactly once; refusing to build.")
           s = s.replace(old_modal, new_modal, 1).replace(old_input, new_input, 1)
