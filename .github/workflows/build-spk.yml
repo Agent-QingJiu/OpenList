@@ -1,0 +1,103 @@
+name: Build OpenList SPK (DSM 6.2.3)
+
+on:
+  workflow_dispatch:
+    inputs:
+      openlist_ref:
+        description: "OpenList upstream branch, tag, or commit"
+        required: true
+        default: "main"
+        type: string
+  push:
+    paths:
+      - ".github/workflows/build-spk.yml"
+      - "package/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openlist-spk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build bromolow x86_64 SPK
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout packaging project
+        uses: actions/checkout@v4
+
+      - name: Checkout official OpenList source
+        env:
+          OPENLIST_REF: ${{ inputs.openlist_ref || 'main' }}
+        run: |
+          git clone --filter=blob:none https://github.com/OpenListTeam/OpenList.git upstream
+          git -C upstream fetch --force --tags
+          git -C upstream checkout "${OPENLIST_REF}"
+          git -C upstream describe --tags --always
+
+      - name: Read upstream Go toolchain version
+        id: go
+        run: |
+          TOOLCHAIN="$(sed -n 's/^toolchain go//p' upstream/go.mod | head -n1)"
+          if [ -z "$TOOLCHAIN" ]; then
+            TOOLCHAIN="$(sed -n 's/^go //p' upstream/go.mod | head -n1)"
+          fi
+          echo "version=$TOOLCHAIN" >> "$GITHUB_OUTPUT"
+          echo "Using Go $TOOLCHAIN"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache: false
+
+      - name: Build official OpenList backend and frontend
+        working-directory: upstream
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          bash build.sh release docker
+          test -s bin/openlist
+          file bin/openlist
+          readelf -h bin/openlist | grep -E 'Class:|Machine:'
+
+      - name: Assemble Synology SPK
+        id: package
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          VERSION="$(git -C upstream describe --tags --abbrev=0 2>/dev/null || git -C upstream rev-parse --short HEAD)"
+          VERSION="${VERSION#v}"
+          SAFE_VERSION="$(printf '%s' "$VERSION" | tr -c 'A-Za-z0-9._-' '-')"
+          STAGE="$RUNNER_TEMP/spk"
+          PAYLOAD="$STAGE/payload"
+          mkdir -p "$PAYLOAD/bin" "$STAGE/scripts"
+
+          install -m 0755 upstream/bin/openlist "$PAYLOAD/bin/openlist"
+          install -m 0644 upstream/LICENSE "$PAYLOAD/LICENSE"
+          printf '%s\n' "$VERSION" > "$PAYLOAD/VERSION"
+
+          sed "s/@VERSION@/$SAFE_VERSION/g" package/INFO.template > "$STAGE/INFO"
+          install -m 0755 package/scripts/start-stop-status "$STAGE/scripts/start-stop-status"
+          install -m 0755 package/scripts/postinst "$STAGE/scripts/postinst"
+          install -m 0755 package/scripts/preuninst "$STAGE/scripts/preuninst"
+
+          tar -czf "$STAGE/package.tgz" -C "$PAYLOAD" .
+          tar -cf "OpenList-${SAFE_VERSION}-DSM6.2.3-bromolow.spk" -C "$STAGE" INFO package.tgz scripts
+
+          tar -tf "OpenList-${SAFE_VERSION}-DSM6.2.3-bromolow.spk"
+          tar -xOf "OpenList-${SAFE_VERSION}-DSM6.2.3-bromolow.spk" INFO
+          echo "version=$SAFE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "spk=OpenList-${SAFE_VERSION}-DSM6.2.3-bromolow.spk" >> "$GITHUB_OUTPUT"
+
+      - name: Upload SPK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenList-${{ steps.package.outputs.version }}-DSM6.2.3-bromolow
+          path: ${{ steps.package.outputs.spk }}
+          if-no-files-found: error
+          retention-days: 30
