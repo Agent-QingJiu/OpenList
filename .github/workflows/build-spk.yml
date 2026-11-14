@@ -148,6 +148,11 @@ jobs:
           VERSION="$(git -C upstream describe --tags --abbrev=0 2>/dev/null || git -C upstream rev-parse --short HEAD)"
           VERSION="${VERSION#v}"
           SAFE_VERSION="$(printf '%s' "$VERSION" | tr -c 'A-Za-z0-9._-' '-')"
+          # Synology requires a monotonically increasing package build number.
+          # Keep the upstream app version visible, and append this workflow's
+          # increasing run number so DSM accepts in-place upgrades.
+          BUILD_NUMBER="$(printf '%04d' "$RUN_NUMBER")"
+          SAFE_VERSION="${SAFE_VERSION}-${BUILD_NUMBER}"
           STAGE="$RUNNER_TEMP/spk"
           PAYLOAD="$STAGE/payload"
           mkdir -p "$PAYLOAD/bin" "$STAGE/scripts"
