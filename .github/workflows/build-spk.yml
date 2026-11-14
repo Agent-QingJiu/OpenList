@@ -53,16 +53,34 @@ jobs:
           go-version: ${{ steps.go.outputs.version }}
           cache: false
 
+      - name: Install package icon tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librsvg2-bin
+
       - name: Build official OpenList backend and frontend
         working-directory: upstream
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           mkdir -p bin
-          bash build.sh release docker
+          # DSM 6.2.3 ships an older glibc. Build with CGO disabled so the
+          # Go executable does not depend on the runner's newer glibc.
+          CGO_ENABLED=0 bash build.sh release docker
           test -s bin/openlist
           file bin/openlist
           readelf -h bin/openlist | grep -E 'Class:|Machine:'
+          if readelf -l bin/openlist | grep -q 'Requesting program interpreter'; then
+            echo "ERROR: OpenList binary is dynamically linked; DSM 6.2.3 needs a compatible static build."
+            readelf -l bin/openlist | grep 'Requesting program interpreter' || true
+            exit 1
+          fi
+          if readelf -d bin/openlist 2>/dev/null | grep -q '(NEEDED)'; then
+            echo "ERROR: OpenList binary still has dynamic library dependencies."
+            readelf -d bin/openlist | grep '(NEEDED)' || true
+            exit 1
+          fi
+          echo "Verified: no dynamic ELF interpreter or shared-library dependencies."
 
       - name: Assemble Synology SPK
         id: package
@@ -83,12 +101,20 @@ jobs:
           printf '%s\n' "$VERSION" > "$PAYLOAD/VERSION"
 
           sed "s/@VERSION@/$SAFE_VERSION/g" package/INFO.template > "$STAGE/INFO"
+
+          # Synology DSM reads these two icon files from the SPK root.
+          curl -fsSL https://raw.githubusercontent.com/OpenListTeam/Logo/main/logo.svg -o "$STAGE/PACKAGE_ICON.svg"
+          rsvg-convert --width 72 --height 72 "$STAGE/PACKAGE_ICON.svg" --output "$STAGE/PACKAGE_ICON.PNG"
+          rsvg-convert --width 256 --height 256 "$STAGE/PACKAGE_ICON.svg" --output "$STAGE/PACKAGE_ICON_256.PNG"
+          rm -f "$STAGE/PACKAGE_ICON.svg"
+          file "$STAGE/PACKAGE_ICON.PNG" "$STAGE/PACKAGE_ICON_256.PNG"
+
           install -m 0755 package/scripts/start-stop-status "$STAGE/scripts/start-stop-status"
           install -m 0755 package/scripts/postinst "$STAGE/scripts/postinst"
           install -m 0755 package/scripts/preuninst "$STAGE/scripts/preuninst"
 
           tar -czf "$STAGE/package.tgz" -C "$PAYLOAD" .
-          tar -cf "OpenList-${SAFE_VERSION}-DSM6.2.3-bromolow.spk" -C "$STAGE" INFO package.tgz scripts
+          tar -cf "OpenList-${SAFE_VERSION}-DSM6.2.3-bromolow.spk" -C "$STAGE" INFO package.tgz scripts PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG
 
           tar -tf "OpenList-${SAFE_VERSION}-DSM6.2.3-bromolow.spk"
           tar -xOf "OpenList-${SAFE_VERSION}-DSM6.2.3-bromolow.spk" INFO
