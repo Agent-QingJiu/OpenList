@@ -14,7 +14,7 @@ on:
       - "package/**"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: openlist-spk-${{ github.ref }}
@@ -231,3 +231,20 @@ jobs:
           path: ${{ steps.package.outputs.spk }}
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish SPK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: synology-${{ steps.package.outputs.version }}
+          name: OpenList ${{ steps.package.outputs.version }} (Synology DSM 6.2.3)
+          body: |
+            OpenList Synology SPK package.
+
+            - OpenList version: ${{ steps.package.outputs.version }}
+            - Platform: bromolow x86_64
+            - DSM compatibility: DSM 6.2.3+
+            
+            Download the `.spk` asset below and install it in Synology Package Center.
+          files: ${{ steps.package.outputs.spk }}
+          fail_on_unmatched_files: true
+          make_latest: false
