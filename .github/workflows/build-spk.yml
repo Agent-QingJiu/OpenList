@@ -75,29 +75,9 @@ jobs:
         with:
           version: "11.28.11"
 
-      - name: Apply hidden-file filtering to folder pickers
+      - name: Prepare official frontend translations
         working-directory: frontend
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("src/components/FolderTree.tsx")
-          s = p.read_text()
-          old_modal = "            autoOpen\n          />"
-          new_modal = "            autoOpen\n            showHiddenFolder={false}\n          />"
-          old_input = "<FolderTree forceRoot onChange={props.onChange} />"
-          new_input = """<FolderTree
-                            forceRoot
-                            onChange={props.onChange}
-                            showHiddenFolder={false}
-                          />"""
-          if s.count(old_modal) != 1 or s.count(old_input) != 1:
-              raise SystemExit("Expected folder-picker call sites not found exactly once; refusing to build.")
-          s = s.replace(old_modal, new_modal, 1).replace(old_input, new_input, 1)
-          if s.count("showHiddenFolder={false}") < 2:
-              raise SystemExit("Hidden-folder filtering patch validation failed.")
-          p.write_text(s)
-          print("Patched both ModalFolderChoose and FolderChooseInput to honor global hide_files rules.")
-          PY
           # Use the official OpenList Frontend v4.2.9 translation bundle.
           # This preserves every upstream locale and avoids replacing the
           # original language system with a partial third-party translation.
@@ -128,7 +108,7 @@ jobs:
           GIT_AUTHOR="The OpenList Projects Contributors <noreply@oplist.org>"
           GIT_COMMIT="$(git log --pretty=format:%h -1)"
           VERSION="$(git describe --abbrev=0 --tags 2>/dev/null || echo v0.0.0)"
-          WEB_VERSION="custom-folder-hide-filter"
+          WEB_VERSION="custom-official-i18n"
           LDFLAGS="-w -s -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.BuiltAt=${BUILT_AT}' -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitAuthor=${GIT_AUTHOR}' -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitCommit=${GIT_COMMIT}' -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.Version=${VERSION}' -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.WebVersion=${WEB_VERSION}'"
 
           # DSM 6.2.3 has an older glibc; CGO-disabled Go build stays portable.
