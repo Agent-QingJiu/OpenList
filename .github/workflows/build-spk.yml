@@ -111,7 +111,7 @@ jobs:
           cp -a ../frontend/dist/. public/dist/
           test -s public/dist/index.html
           echo "Patched frontend bundle embedded from OpenList-Frontend:"
-          find public/dist -maxdepth 2 -type f | head -20
+          find public/dist -maxdepth 2 -type f | sed -n '1,20p'
 
           BUILT_AT="$(date +'%F %T %z')"
           GIT_AUTHOR="The OpenList Projects Contributors <noreply@oplist.org>"
