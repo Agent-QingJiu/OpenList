@@ -6,7 +6,7 @@ on:
       openlist_ref:
         description: "OpenList upstream branch, tag, or commit"
         required: true
-        default: "main"
+        default: "v4.2.9"
         type: string
   push:
     paths:
@@ -30,7 +30,7 @@ jobs:
 
       - name: Checkout official OpenList source
         env:
-          OPENLIST_REF: ${{ inputs.openlist_ref || 'main' }}
+          OPENLIST_REF: ${{ inputs.openlist_ref || 'v4.2.9' }}
         run: |
           git clone --filter=blob:none https://github.com/OpenListTeam/OpenList.git upstream
           git -C upstream fetch --force --tags
@@ -62,6 +62,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: OpenListTeam/OpenList-Frontend
+          ref: v4.2.9
           path: frontend
 
       - name: Set up Node and pnpm
