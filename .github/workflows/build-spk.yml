@@ -108,29 +108,55 @@ jobs:
           # monochrome/technical mark. The repository provides pre-rendered
           # square PNG assets generated from its original Illustrator artwork.
           curl -fsSL https://raw.githubusercontent.com/OpenListTeam/Logo/main/logo/256x256.png -o "$STAGE/openlist-color.png"
-          python3 - "$STAGE/openlist-color.png" "$STAGE/PACKAGE_ICON.PNG" "$STAGE/PACKAGE_ICON_256.PNG" <<'PY'
+          python3 - "$STAGE/openlist-color.png" "$STAGE/PACKAGE_ICON.PNG" "$STAGE/PACKAGE_ICON_256.PNG" "$STAGE/INFO" <<'PY'
+          import base64
           import sys
+          from io import BytesIO
+          from pathlib import Path
           from PIL import Image
           source = Image.open(sys.argv[1]).convert("RGBA")
           if source.getbbox() is None:
               raise SystemExit("ERROR: official OpenList color icon is empty")
-          for size, output in ((72, sys.argv[2]), (256, sys.argv[3])):
-              icon = source.resize((size, size), Image.Resampling.LANCZOS)
-              if icon.getbbox() is None:
-                  raise SystemExit(f"ERROR: generated color icon is empty: {output}")
-              icon.save(output, "PNG", optimize=True)
-              print(f"Verified full-color icon: {output}, {icon.size}, bbox={icon.getbbox()}")
+
+          # DSM's small package-list icon handles transparent RGBA correctly.
+          icon72 = source.resize((72, 72), Image.Resampling.LANCZOS)
+          icon72.save(sys.argv[2], "PNG", optimize=True)
+
+          # The detail-page renderer on this DSM 6 target displays transparent
+          # 256px icons as a black mask. Flatten only this larger icon onto
+          # white, preserving the official blue/mint RGB artwork.
+          icon256 = source.resize((256, 256), Image.Resampling.LANCZOS)
+          white = Image.new("RGBA", icon256.size, (255, 255, 255, 255))
+          white.alpha_composite(icon256)
+          opaque256 = white.convert("RGB")
+          opaque256.save(sys.argv[3], "PNG", optimize=True)
+
+          check72 = Image.open(sys.argv[2])
+          check256 = Image.open(sys.argv[3])
+          if check72.size != (72, 72) or check72.mode != "RGBA":
+              raise SystemExit("ERROR: 72px icon validation failed")
+          if check256.size != (256, 256) or check256.mode != "RGB":
+              raise SystemExit("ERROR: 256px icon must be opaque RGB")
+          colors = opaque256.getcolors(256 * 256) or []
+          if len(colors) < 3:
+              raise SystemExit("ERROR: 256px icon lost its full-color artwork")
+
+          # Also refresh the authoritative DSM 256px INFO field so an upgrade
+          # cannot keep an older cached package_icon_256 value.
+          buf = BytesIO()
+          opaque256.save(buf, format="PNG", optimize=True)
+          encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+          with open(sys.argv[4], "a", encoding="utf-8") as info:
+              info.write(f'package_icon_256="{encoded}"\\n')
+
+          print(f"Verified list icon: {sys.argv[2]} ({check72.mode}, {check72.size})")
+          print(f"Verified detail icon: {sys.argv[3]} ({check256.mode}, {check256.size}, {len(colors)} colors, opaque)")
+          print(f"Verified INFO package_icon_256: {len(encoded)} base64 chars")
           PY
           rm -f "$STAGE/openlist-color.png"
           file "$STAGE/PACKAGE_ICON.PNG" "$STAGE/PACKAGE_ICON_256.PNG"
-
-          # Synology's SPK format reads PACKAGE_ICON.PNG and
-          # PACKAGE_ICON_256.PNG directly. Do not duplicate the large PNG
-          # payloads into INFO: the 256px base64 line can exceed DSM 6's
-          # practical INFO parser limits and leave the detail icon stale.
           test -s "$STAGE/PACKAGE_ICON.PNG"
           test -s "$STAGE/PACKAGE_ICON_256.PNG"
-          echo "Verified: both package icon files are present at SPK root."
 
           install -m 0755 package/scripts/start-stop-status "$STAGE/scripts/start-stop-status"
           install -m 0755 package/scripts/postinst "$STAGE/scripts/postinst"
