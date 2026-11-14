@@ -1,0 +1,5 @@
+#!/bin/sh
+PKGVAR="${SYNOPKG_PKGVAR:-/var/packages/OpenList/var}"
+mkdir -p "$PKGVAR" "$PKGVAR/log" "$PKGVAR/temp" "$PKGVAR/bleve"
+chmod 0755 "$PKGVAR" "$PKGVAR/log" "$PKGVAR/temp" "$PKGVAR/bleve"
+exit 0
