@@ -54,7 +54,7 @@ jobs:
           if [ "$EVENT_NAME" = "schedule" ]; then
             VERSION="${REF#v}"
             RELEASES="$(gh api repos/${{ github.repository }}/releases --paginate --jq '.[].tag_name')"
-            if printf '%s\\n' "$RELEASES" | grep -Eq "^synology-${VERSION}-[0-9]+$"; then
+            if printf '%s\n' "$RELEASES" | grep -Eq "^synology-${VERSION}-[0-9]+$"; then
               echo "版本 $REF 已经发布，跳过重复构建。"
               echo "should_build=false" >> "$GITHUB_OUTPUT"
               exit 0
