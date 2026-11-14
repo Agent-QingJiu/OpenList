@@ -147,7 +147,7 @@ jobs:
           opaque256.save(buf, format="PNG", optimize=True)
           encoded = base64.b64encode(buf.getvalue()).decode("ascii")
           with open(sys.argv[4], "a", encoding="utf-8") as info:
-              info.write(f'package_icon_256="{encoded}"\\n')
+              info.write(f'package_icon_256="{encoded}"\n')
 
           print(f"Verified list icon: {sys.argv[2]} ({check72.mode}, {check72.size})")
           print(f"Verified detail icon: {sys.argv[3]} ({check256.mode}, {check256.size}, {len(colors)} colors, opaque)")
