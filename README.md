@@ -12,7 +12,7 @@
 
 ## 下载与安装
 
-1. 打开本项目的 [Releases 发布页面](https://github.com/Agent-QingJiu/OpenList/releases)。
+1. 打开本项目的 [Releases 发布页面](https://github.com/QiStore/OpenList/releases)。
 2. 下载最新版本中的 `.spk` 安装包。
 3. 在群晖 DSM 的「套件中心」中选择「手动安装」，上传 SPK 文件并按提示完成安装。
 
